@@ -465,20 +465,50 @@
    ================================================================ */
 
 // ── Código Apps Script para o usuário copiar ─────────────────────
-const APPS_SCRIPT_CODE = `// SENAI Inventário — Backend Google Apps Script
+const APPS_SCRIPT_CODE = `// SENAI Inventário — Backend Google Apps Script v2
 // Cole este código no Apps Script da sua planilha Google
 // Extensões > Apps Script > apague tudo > cole > Implantar > App da Web
 // Executar como: Eu | Acesso: Qualquer pessoa
+// ⚠ Se usar conta edu.senai.br, marque "Qualquer pessoa" (não "Qualquer pessoa na organização")
 
 function doGet(e) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName('Inventário') || ss.getActiveSheet();
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return resp({ ok: true, items: [] });
-    const norm = h => String(h).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim();
-    const H = data[0].map(norm);
-    const fMap = {
+    var p = e.parameter || {};
+    
+    // ── SAVE via GET (contorna CORS do Workspace) ──
+    if (p.action === 'save' && p.data) {
+      var items = JSON.parse(decodeURIComponent(p.data));
+      return saveItems(items, p.callback);
+    }
+    
+    // ── SAVE via GET (dados em múltiplos chunks para URLs longas) ──
+    if (p.action === 'save_chunks') {
+      var cache = CacheService.getScriptCache();
+      var chunkId = p.id || 'default';
+      if (p.chunk !== undefined) {
+        // Recebendo um chunk
+        cache.put('chunk_' + chunkId + '_' + p.chunk, p.data || '', 300);
+        cache.put('chunk_' + chunkId + '_total', p.total || '1', 300);
+        return jsonpResp({ ok: true, chunk: Number(p.chunk) }, p.callback);
+      }
+      if (p.assemble) {
+        // Montando todos os chunks
+        var total = Number(cache.get('chunk_' + chunkId + '_total') || '1');
+        var full = '';
+        for (var i = 0; i < total; i++) full += (cache.get('chunk_' + chunkId + '_' + i) || '');
+        var items = JSON.parse(decodeURIComponent(full));
+        return saveItems(items, p.callback);
+      }
+    }
+    
+    // ── LOAD ──
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var sheet = ss.getSheetByName('Inventário') || ss.getActiveSheet();
+    var data = sheet.getDataRange().getValues();
+    if (data.length <= 1) return jsonpResp({ ok: true, items: [] }, p.callback);
+    var norm = function(h) { return String(h).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim(); };
+    var H = data[0].map(norm);
+    var fMap = {
       id:['id'], patrimonio:['patrimonio','pat','nro','num','cod','codigo'],
       sala:['sala','local','localizacao','setor','ambiente'],
       desc:['desc','descricao','equipamento','item','bem','denominacao','nome bem'],
@@ -487,38 +517,51 @@ function doGet(e) {
       obs:['obs','observ','nota','serie','ns','serial','modelo','marca'],
       data:['data'], hora:['hora'], metodo:['metodo','method']
     };
-    const colMap = {};
-    Object.entries(fMap).forEach(([f,als]) => {
-      const i = H.findIndex(h => als.some(a => h.includes(a)));
-      if (i >= 0) colMap[f] = i;
+    var colMap = {};
+    Object.keys(fMap).forEach(function(f) {
+      var als = fMap[f];
+      for (var i = 0; i < H.length; i++) {
+        if (als.some(function(a) { return H[i].indexOf(a) >= 0; })) { colMap[f] = i; break; }
+      }
     });
-    const items = data.slice(1).filter(r => r.some(c => c !== '')).map(r => {
-      const it = {};
-      Object.entries(colMap).forEach(([f,i]) => { it[f] = String(r[i] || ''); });
+    var items = data.slice(1).filter(function(r) { return r.some(function(c) { return c !== ''; }); }).map(function(r) {
+      var it = {};
+      Object.keys(colMap).forEach(function(f) { it[f] = String(r[colMap[f]] || ''); });
       if (!it.id) it.id = 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
       return it;
     });
-    return resp({ ok: true, items });
-  } catch(err) { return resp({ ok: false, error: err.toString() }); }
+    return jsonpResp({ ok: true, items: items }, p.callback);
+  } catch(err) { return jsonpResp({ ok: false, error: err.toString() }, (e.parameter||{}).callback); }
 }
 
 function doPost(e) {
   try {
-    const p = JSON.parse(e.postData.contents);
+    var p = JSON.parse(e.postData.contents);
     if (p.action !== 'save') return resp({ ok: false, error: 'Ação inválida' });
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    let s = ss.getSheetByName('Inventário');
-    if (!s) s = ss.insertSheet('Inventário');
-    s.clearContents();
-    const keys   = ['id','patrimonio','sala','desc','tipo','resp','obs','data','hora','metodo'];
-    const labels = ['ID','Patrimônio','Sala','Descrição','Tipo','Responsável','Observações','Data','Hora','Método'];
-    s.getRange(1,1,1,labels.length).setValues([labels]);
-    const hr = s.getRange(1,1,1,labels.length);
-    hr.setBackground('#0047B6'); hr.setFontColor('#fff'); hr.setFontWeight('bold');
-    const its = p.items || [];
-    if (its.length > 0) s.getRange(2,1,its.length,keys.length).setValues(its.map(it=>keys.map(k=>it[k]||'')));
-    return resp({ ok: true, saved: its.length });
+    return saveItems(p.items || []);
   } catch(err) { return resp({ ok: false, error: err.toString() }); }
+}
+
+function saveItems(items, callback) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var s = ss.getSheetByName('Inventário');
+  if (!s) s = ss.insertSheet('Inventário');
+  s.clearContents();
+  var keys   = ['id','patrimonio','sala','desc','tipo','resp','obs','data','hora','metodo'];
+  var labels = ['ID','Patrimônio','Sala','Descrição','Tipo','Responsável','Observações','Data','Hora','Método'];
+  s.getRange(1,1,1,labels.length).setValues([labels]);
+  var hr = s.getRange(1,1,1,labels.length);
+  hr.setBackground('#0047B6'); hr.setFontColor('#fff'); hr.setFontWeight('bold');
+  if (items.length > 0) s.getRange(2,1,items.length,keys.length).setValues(items.map(function(it){ return keys.map(function(k){ return it[k]||''; }); }));
+  var result = { ok: true, saved: items.length };
+  return callback ? jsonpResp(result, callback) : resp(result);
+}
+
+function jsonpResp(data, callback) {
+  if (callback) {
+    return ContentService.createTextOutput(callback + '(' + JSON.stringify(data) + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
+  return resp(data);
 }
 
 function resp(d) {
@@ -1304,13 +1347,42 @@ function setSyncStatus(status, msg='') {
   if (sd&&msg) { sd.textContent=msg; sd.style.color=status==='error'?'var(--red)':status==='ok'?'var(--green)':'#666'; }
 }
 
+function fetchJSONP(url, params = {}) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'jsonp_' + Date.now() + '_' + Math.round(Math.random()*100000);
+    window[cbName] = function(data) {
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      resolve(data);
+    };
+    let query = url.includes('?') ? '&' : '?';
+    query += 'callback=' + cbName;
+    for (let k in params) query += '&' + k + '=' + encodeURIComponent(params[k]);
+    
+    const script = document.createElement('script');
+    script.src = url + query;
+    script.onerror = () => {
+      delete window[cbName];
+      if (script.parentNode) script.parentNode.removeChild(script);
+      reject(new Error('Falha na rede ou bloqueio (CORS/Redirect)'));
+    };
+    document.body.appendChild(script);
+    
+    setTimeout(() => {
+      if (window[cbName]) {
+        delete window[cbName];
+        if (script.parentNode) script.parentNode.removeChild(script);
+        reject(new Error('Timeout (15s) na requisição'));
+      }
+    }, 15000);
+  });
+}
+
 async function loadFromSheets() {
   const url=getScriptUrl(); if(!url) return;
   setSyncStatus('loading','Carregando do Google Sheets...');
   try {
-    const resp=await fetch(url+'?action=load&t='+Date.now(), {signal:AbortSignal.timeout(12000)});
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const data=await resp.json();
+    const data = await fetchJSONP(url, { action: 'load' });
     if(!data.ok) throw new Error(data.error||'Erro desconhecido');
     const remote=(data.items||[]).map(it=>{if(!it.id)it.id=genId();return it;});
     const remoteIds=new Set(remote.map(i=>i.id));
@@ -1329,16 +1401,26 @@ async function saveToSheets() {
   const url=getScriptUrl(); if(!url){setSyncStatus('nourl');return;}
   setSyncStatus('loading','Salvando...');
   try {
-    const resp=await fetch(url,{
-      method:'POST',
-      headers:{'Content-Type':'text/plain;charset=utf-8'},
-      body:JSON.stringify({action:'save',items}),
-      signal:AbortSignal.timeout(15000)
-    });
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const data=await resp.json();
-    if(!data.ok) throw new Error(data.error||'Erro');
-    setSyncStatus('ok',`✓ ${data.saved} itens salvos — ${fmtTime(now())}`);
+    const fullData = encodeURIComponent(JSON.stringify(items));
+    const chunkSize = 1500; // Limite seguro para URLs GET
+    
+    if (fullData.length <= chunkSize) {
+      const data = await fetchJSONP(url, { action: 'save', data: fullData });
+      if(!data.ok) throw new Error(data.error||'Erro ao salvar');
+      setSyncStatus('ok',`✓ ${data.saved} itens salvos — ${fmtTime(now())}`);
+    } else {
+      const totalChunks = Math.ceil(fullData.length / chunkSize);
+      const chunkId = Date.now().toString(36);
+      for (let i = 0; i < totalChunks; i++) {
+        setSyncStatus('loading',`Enviando parte ${i+1}/${totalChunks}...`);
+        const chunkData = fullData.slice(i * chunkSize, (i + 1) * chunkSize);
+        await fetchJSONP(url, { action: 'save_chunks', id: chunkId, chunk: i, total: totalChunks, data: chunkData });
+      }
+      setSyncStatus('loading','Processando dados no servidor...');
+      const data = await fetchJSONP(url, { action: 'save_chunks', id: chunkId, assemble: 1 });
+      if(!data.ok) throw new Error(data.error||'Erro na montagem');
+      setSyncStatus('ok',`✓ ${data.saved} itens salvos — ${fmtTime(now())}`);
+    }
   } catch(e) {
     setSyncStatus('error','Erro ao salvar: '+e.message);
   }
@@ -1350,13 +1432,11 @@ async function testSheets() {
   setSyncStatus('loading','Testando conexão...');
   document.getElementById('settings-status').textContent='Testando...';
   try {
-    const resp=await fetch(url+'?action=load&t='+Date.now(), {signal:AbortSignal.timeout(10000)});
-    if(!resp.ok) throw new Error('HTTP '+resp.status);
-    const data=await resp.json();
-    if(!data.ok) throw new Error(data.error);
+    const data = await fetchJSONP(url, { action: 'load' });
+    if(!data.ok) throw new Error(data.error||'Erro desconhecido');
     setSyncStatus('ok',`✓ Conexão OK! ${(data.items||[]).length} itens na planilha.`);
   } catch(e) {
-    setSyncStatus('error','✗ Falhou: '+e.message+' — verifique a URL e as permissões.');
+    setSyncStatus('error','✗ Falhou: '+e.message+' — verifique a URL e a implantação.');
   }
 }
 
