@@ -186,7 +186,7 @@
     <div class="header-top">
       <div class="logo-box">SENAI</div>
       <h1>Inventário de Equipamentos</h1>
-      <button class="sync-btn" id="sync-btn" onclick="openSettings()" title="Configurações / Google Sheets">
+      <button class="sync-btn" id="sync-btn" onclick="openSettings()" title="Configurações / Supabase">
         <i class="ti ti-cloud-off" id="sync-icon"></i>
       </button>
       <span class="badge-count" id="badge">0</span>
@@ -365,7 +365,7 @@
   </div>
 </div>
 
-<!-- ══ MODAL: CONFIGURAÇÕES / GOOGLE SHEETS ══ -->
+<!-- ══ MODAL: CONFIGURAÇÕES / SUPABASE ══ -->
 <div class="modal-overlay" id="settings-modal">
   <div class="modal-box" style="max-width:500px">
     <div class="modal-header">
@@ -373,19 +373,23 @@
       <button class="modal-close" onclick="closeSettings()">✕</button>
     </div>
 
-    <!-- Google Sheets -->
-    <div class="settings-heading"><i class="ti ti-brand-google-drive"></i> Google Sheets — Armazenamento Permanente</div>
+    <!-- Supabase -->
+    <div class="settings-heading"><i class="ti ti-database"></i> Supabase — Banco de Dados Permanente</div>
     <p class="settings-desc">
-      Sincronize com uma planilha Google para não perder dados ao limpar o navegador e acessar de qualquer dispositivo.
+      Sincronize com um banco de dados PostgreSQL do Supabase para não perder dados ao limpar o navegador e acessar de qualquer dispositivo de forma transparente.
     </p>
     <div class="field">
-      <label>URL do Google Apps Script</label>
-      <input id="cfg-url" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+      <label>Supabase URL</label>
+      <input id="cfg-sb-url" type="url" placeholder="https://xxxxxxxxxxxxxx.supabase.co">
+    </div>
+    <div class="field" style="margin-top: 10px;">
+      <label>Supabase Anon Key (Chave Pública)</label>
+      <input id="cfg-sb-key" type="text" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...">
     </div>
     <div class="settings-actions">
-      <button class="btn btn-sm btn-edit-sm" onclick="testSheets()"><i class="ti ti-plug"></i> Testar</button>
-      <button class="btn btn-sm btn-edit-sm" onclick="doLoadFromSheets()"><i class="ti ti-download"></i> Carregar dados</button>
-      <button class="btn btn-sm btn-edit-sm" onclick="doSaveToSheets()"><i class="ti ti-upload"></i> Salvar agora</button>
+      <button class="btn btn-sm btn-edit-sm" onclick="testSupabase()"><i class="ti ti-plug"></i> Testar</button>
+      <button class="btn btn-sm btn-edit-sm" onclick="doLoadFromSupabase()"><i class="ti ti-download"></i> Carregar dados</button>
+      <button class="btn btn-sm btn-edit-sm" onclick="doSaveToSupabase()"><i class="ti ti-upload"></i> Salvar agora</button>
     </div>
     <label class="toggle-label">
       <input type="checkbox" id="cfg-autosync" checked> Sincronizar automaticamente ao salvar
@@ -394,20 +398,20 @@
 
     <div class="divider"></div>
 
-    <!-- Apps Script setup -->
-    <div class="settings-heading"><i class="ti ti-code"></i> Como configurar o Google Apps Script</div>
+    <!-- Supabase Setup -->
+    <div class="settings-heading"><i class="ti ti-code"></i> Como configurar o Supabase</div>
     <ol class="step-list">
-      <li>Crie uma planilha em <a href="https://sheets.google.com" target="_blank">Google Sheets</a></li>
-      <li>Vá em <b>Extensões › Apps Script</b></li>
-      <li>Apague todo o código e cole o código abaixo</li>
-      <li>Clique em <b>Implantar › Nova implantação</b></li>
-      <li>Tipo: <b>App da Web</b> &nbsp;|&nbsp; Executar como: <b>Eu</b> &nbsp;|&nbsp; Acesso: <b>Qualquer pessoa</b></li>
-      <li>Autorize, copie a URL e cole acima</li>
+      <li>Crie uma conta gratuita em <a href="https://supabase.com" target="_blank">supabase.com</a></li>
+      <li>Crie um novo projeto (defina o nome e senha do banco)</li>
+      <li>Vá no menu lateral em <b>SQL Editor</b> e clique em <b>New Query</b></li>
+      <li>Cole o script SQL abaixo e clique em <b>Run</b> no canto superior direito</li>
+      <li>Vá em <b>Project Settings (engrenagem) › API</b> (no menu lateral inferior)</li>
+      <li>Copie a <b>Project URL</b> e a chave <b>`anon` `public`</b> e cole nos campos acima</li>
     </ol>
-    <button class="code-copy-btn" onclick="copyScript()">
-      <i class="ti ti-copy"></i> Copiar código Apps Script
+    <button class="code-copy-btn" onclick="copySQLScript()">
+      <i class="ti ti-copy"></i> Copiar Script SQL do Banco
     </button>
-    <div id="copy-ok" style="color:var(--green);font-size:12px;margin-top:4px;display:none">✓ Código copiado! Agora cole no Apps Script.</div>
+    <div id="copy-ok" style="color:var(--green);font-size:12px;margin-top:4px;display:none">✓ Script SQL copiado! Agora cole no SQL Editor do Supabase.</div>
 
     <div class="divider"></div>
 
@@ -477,109 +481,38 @@
    ✓ Exportação PDF + CSV
    ================================================================ */
 
-// ── Código Apps Script para o usuário copiar ─────────────────────
-const APPS_SCRIPT_CODE = `// SENAI Inventário — Backend Google Apps Script v2
-// Cole este código no Apps Script da sua planilha Google
-// Extensões > Apps Script > apague tudo > cole > Implantar > App da Web
-// Executar como: Eu | Acesso: Qualquer pessoa
-// ⚠ Se usar conta edu.senai.br, marque "Qualquer pessoa" (não "Qualquer pessoa na organização")
+const SUPABASE_SQL_CODE = `-- SENAI Inventário — Script SQL de Configuração do Supabase
+-- Cole este script no "SQL Editor" do seu painel do Supabase e clique em "Run"
 
-function doGet(e) {
-  try {
-    var p = e.parameter || {};
-    
-    // ── SAVE via GET (contorna CORS do Workspace) ──
-    if (p.action === 'save' && p.data) {
-      var items = JSON.parse(decodeURIComponent(p.data));
-      return saveItems(items, p.callback);
-    }
-    
-    // ── SAVE via GET (dados em múltiplos chunks para URLs longas) ──
-    if (p.action === 'save_chunks') {
-      var cache = CacheService.getScriptCache();
-      var chunkId = p.id || 'default';
-      if (p.chunk !== undefined) {
-        // Recebendo um chunk
-        cache.put('chunk_' + chunkId + '_' + p.chunk, p.data || '', 300);
-        cache.put('chunk_' + chunkId + '_total', p.total || '1', 300);
-        return jsonpResp({ ok: true, chunk: Number(p.chunk) }, p.callback);
-      }
-      if (p.assemble) {
-        // Montando todos os chunks
-        var total = Number(cache.get('chunk_' + chunkId + '_total') || '1');
-        var full = '';
-        for (var i = 0; i < total; i++) full += (cache.get('chunk_' + chunkId + '_' + i) || '');
-        var items = JSON.parse(decodeURIComponent(full));
-        return saveItems(items, p.callback);
-      }
-    }
-    
-    // ── LOAD ──
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
-    var sheet = ss.getSheetByName('Inventário') || ss.getActiveSheet();
-    var data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return jsonpResp({ ok: true, items: [] }, p.callback);
-    var norm = function(h) { return String(h).toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').trim(); };
-    var H = data[0].map(norm);
-    var fMap = {
-      id:['id'], patrimonio:['patrimonio','pat','nro','num','cod','codigo'],
-      sala:['sala','local','localizacao','setor','ambiente'],
-      desc:['desc','descricao','equipamento','item','bem','denominacao','nome bem'],
-      tipo:['tipo','type','categoria','classe'],
-      resp:['resp','responsavel','conferido','conferente'],
-      obs:['obs','observ','nota','serie','ns','serial','modelo','marca'],
-      data:['data'], hora:['hora'], metodo:['metodo','method']
-    };
-    var colMap = {};
-    Object.keys(fMap).forEach(function(f) {
-      var als = fMap[f];
-      for (var i = 0; i < H.length; i++) {
-        if (als.some(function(a) { return H[i].indexOf(a) >= 0; })) { colMap[f] = i; break; }
-      }
-    });
-    var items = data.slice(1).filter(function(r) { return r.some(function(c) { return c !== ''; }); }).map(function(r) {
-      var it = {};
-      Object.keys(colMap).forEach(function(f) { it[f] = String(r[colMap[f]] || ''); });
-      if (!it.id) it.id = 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2,5);
-      return it;
-    });
-    return jsonpResp({ ok: true, items: items }, p.callback);
-  } catch(err) { return jsonpResp({ ok: false, error: err.toString() }, (e.parameter||{}).callback); }
-}
+-- 1. Criar a tabela de inventário
+create table if not exists inventario (
+  id text primary key,
+  patrimonio text unique not null,
+  sala text,
+  descricao text,
+  tipo text,
+  responsavel text,
+  observacoes text,
+  data text,
+  hora text,
+  metodo text,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
 
-function doPost(e) {
-  try {
-    var p = JSON.parse(e.postData.contents);
-    if (p.action !== 'save') return resp({ ok: false, error: 'Ação inválida' });
-    return saveItems(p.items || []);
-  } catch(err) { return resp({ ok: false, error: err.toString() }); }
-}
+-- 2. Habilitar Row Level Security (RLS)
+alter table inventario enable row level security;
 
-function saveItems(items, callback) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var s = ss.getSheetByName('Inventário');
-  if (!s) s = ss.insertSheet('Inventário');
-  s.clearContents();
-  var keys   = ['id','patrimonio','sala','desc','tipo','resp','obs','data','hora','metodo'];
-  var labels = ['ID','Patrimônio','Sala','Descrição','Tipo','Responsável','Observações','Data','Hora','Método'];
-  s.getRange(1,1,1,labels.length).setValues([labels]);
-  var hr = s.getRange(1,1,1,labels.length);
-  hr.setBackground('#0047B6'); hr.setFontColor('#fff'); hr.setFontWeight('bold');
-  if (items.length > 0) s.getRange(2,1,items.length,keys.length).setValues(items.map(function(it){ return keys.map(function(k){ return it[k]||''; }); }));
-  var result = { ok: true, saved: items.length };
-  return callback ? jsonpResp(result, callback) : resp(result);
-}
+-- 3. Criar políticas para permitir acesso público anônimo (sem login de usuário)
+create policy "Permitir leitura pública" on inventario
+  for select using (true);
 
-function jsonpResp(data, callback) {
-  if (callback) {
-    return ContentService.createTextOutput(callback + '(' + JSON.stringify(data) + ')').setMimeType(ContentService.MimeType.JAVASCRIPT);
-  }
-  return resp(data);
-}
+-- 4. Criar políticas para permitir inserção pública
+create policy "Permitir inserção pública" on inventario
+  for insert with check (true);
 
-function resp(d) {
-  return ContentService.createTextOutput(JSON.stringify(d)).setMimeType(ContentService.MimeType.JSON);
-}`;
+-- 5. Criar políticas para permitir atualização pública
+create policy "Permitir atualização pública" on inventario
+  for update using (true);`;
 
 // ── Storage ───────────────────────────────────────────────────────
 const DB = {
@@ -588,7 +521,8 @@ const DB = {
 };
 
 // ── Configurações Globais Hardcoded ───────────────────────────────
-const DEFAULT_SHEETS_URL = 'https://script.google.com/macros/s/AKfycbxflVp5HtL3l8AC01rm2Awj6mDwB8354cGCuY-iOKluks358PByZPqxiQuR8hmemdSoXA/exec'; // Cole a URL do seu Google Web App (Apps Script) aqui!
+const DEFAULT_SUPABASE_URL = ''; // Insira sua Supabase URL padrão aqui se quiser fixar no código
+const DEFAULT_SUPABASE_KEY = ''; // Insira sua Supabase Anon Key padrão aqui se quiser fixar no código
 
 // ── Estado Global ─────────────────────────────────────────────────
 let items      = DB.load();
@@ -662,8 +596,9 @@ function persist() {
   DB.save(items);
   updStats();
   updDatalist();
-  if (getScriptUrl() && localStorage.getItem('senai_autosync') !== 'false') {
-    saveToSheets(); // async, não bloqueia
+  const { url, key } = getSupabaseConfig();
+  if (url && key && localStorage.getItem('senai_autosync') !== 'false') {
+    saveToSupabase(); // async, não bloqueia
   }
 }
 
@@ -1461,9 +1396,14 @@ function confirmImport() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  GOOGLE SHEETS — Armazenamento permanente
+//  SUPABASE — Armazenamento permanente
 // ═══════════════════════════════════════════════════════════════════
-function getScriptUrl() { const u = localStorage.getItem('senai_sheets_url'); return (u && u.trim().startsWith('http')) ? u.trim() : DEFAULT_SHEETS_URL; }
+function getSupabaseConfig() {
+  return {
+    url: localStorage.getItem('senai_sb_url') || DEFAULT_SUPABASE_URL || '',
+    key: localStorage.getItem('senai_sb_key') || DEFAULT_SUPABASE_KEY || ''
+  };
+}
 
 function setSyncStatus(status, msg='') {
   const btn=document.getElementById('sync-btn'), icon=document.getElementById('sync-icon');
@@ -1471,141 +1411,162 @@ function setSyncStatus(status, msg='') {
   btn.className='sync-btn'+(status?' '+status:'');
   const icons={idle:'ti-cloud',loading:'ti-refresh',ok:'ti-cloud-check',error:'ti-cloud-x',nourl:'ti-cloud-off'};
   icon.className='ti '+(icons[status]||'ti-cloud');
-  btn.title=msg||{idle:'Google Sheets configurado',loading:'Sincronizando...',ok:'Sincronizado com Sheets',error:'Erro na sincronização',nourl:'Configurar Google Sheets'}[status]||'Configurações';
+  btn.title=msg||{idle:'Supabase configurado',loading:'Sincronizando...',ok:'Sincronizado com o banco',error:'Erro na sincronização',nourl:'Configurar Supabase'}[status]||'Configurações';
   const sd=document.getElementById('settings-status');
   if (sd&&msg) { sd.textContent=msg; sd.style.color=status==='error'?'var(--red)':status==='ok'?'var(--green)':'#666'; }
 }
 
-function fetchJSONP(url, params = {}) {
-  return new Promise((resolve, reject) => {
-    const cbName = 'jsonp_' + Date.now() + '_' + Math.round(Math.random()*100000);
-    window[cbName] = function(data) {
-      delete window[cbName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-      resolve(data);
-    };
-    let query = url.includes('?') ? '&' : '?';
-    query += 'callback=' + cbName;
-    for (let k in params) query += '&' + k + '=' + encodeURIComponent(params[k]);
-    
-    const script = document.createElement('script');
-    script.src = url + query;
-    script.onerror = () => {
-      delete window[cbName];
-      if (script.parentNode) script.parentNode.removeChild(script);
-      reject(new Error('Falha na rede ou bloqueio (CORS/Redirect)'));
-    };
-    document.body.appendChild(script);
-    
-    setTimeout(() => {
-      if (window[cbName]) {
-        delete window[cbName];
-        if (script.parentNode) script.parentNode.removeChild(script);
-        reject(new Error('Timeout (15s) na requisição'));
-      }
-    }, 15000);
-  });
-}
-
-async function loadFromSheets() {
-  const url=getScriptUrl(); if(!url) return;
-  setSyncStatus('loading','Carregando do Google Sheets...');
+async function loadFromSupabase() {
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) return;
+  setSyncStatus('loading', 'Carregando do banco de dados...');
   try {
-    const data = await fetchJSONP(url, { action: 'load' });
-    if(!data.ok) throw new Error(data.error||'Erro desconhecido');
-    const remote=(data.items||[]).map(it=>{if(!it.id)it.id=genId();return it;});
-    const remoteIds=new Set(remote.map(i=>i.id));
-    const localOnly=items.filter(i=>!remoteIds.has(i.id));
-    items=[...remote,...localOnly];
+    const res = await fetch(`${url}/rest/v1/inventario?select=*`, {
+      method: 'GET',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`
+      }
+    });
+    if (!res.ok) throw new Error('Falha ao carregar dados do banco');
+    const data = await res.json();
+    
+    // Mapeia do formato do Supabase de volta para o formato local
+    const remote = data.map(i => ({
+      id: i.id || genId(),
+      patrimonio: i.patrimonio,
+      sala: i.sala || '',
+      desc: i.descricao || '',
+      tipo: i.tipo || '',
+      resp: i.responsavel || '',
+      obs: i.observacoes || '',
+      data: i.data || '',
+      hora: i.hora || '',
+      metodo: i.metodo || ''
+    }));
+    
+    const remoteIds = new Set(remote.map(i => i.id));
+    const localOnly = items.filter(i => !remoteIds.has(i.id));
+    items = [...remote, ...localOnly];
     DB.save(items); updStats(); updDatalist();
-    setSyncStatus('ok',`✓ ${remote.length} itens carregados — ${fmtTime(now())}`);
+    setSyncStatus('ok', `✓ ${remote.length} itens carregados — ${fmtTime(now())}`);
     return true;
   } catch(e) {
-    setSyncStatus('error','Erro: '+e.message);
+    setSyncStatus('error', 'Erro ao carregar: ' + e.message);
     return false;
   }
 }
 
-async function saveToSheets() {
-  const url=getScriptUrl(); if(!url){setSyncStatus('nourl');return;}
-  setSyncStatus('loading','Salvando...');
+async function saveToSupabase() {
+  const { url, key } = getSupabaseConfig();
+  if (!url || !key) { setSyncStatus('nourl'); return; }
+  setSyncStatus('loading', 'Enviando ao banco de dados...');
   try {
-    const fullData = encodeURIComponent(JSON.stringify(items));
-    const chunkSize = 1500; // Limite seguro para URLs GET
-    
-    if (fullData.length <= chunkSize) {
-      const data = await fetchJSONP(url, { action: 'save', data: fullData });
-      if(!data.ok) throw new Error(data.error||'Erro ao salvar');
-      setSyncStatus('ok',`✓ ${data.saved} itens salvos — ${fmtTime(now())}`);
-    } else {
-      const totalChunks = Math.ceil(fullData.length / chunkSize);
-      const chunkId = Date.now().toString(36);
-      for (let i = 0; i < totalChunks; i++) {
-        setSyncStatus('loading',`Enviando parte ${i+1}/${totalChunks}...`);
-        const chunkData = fullData.slice(i * chunkSize, (i + 1) * chunkSize);
-        await fetchJSONP(url, { action: 'save_chunks', id: chunkId, chunk: i, total: totalChunks, data: chunkData });
+    // Mapeia do formato local para o formato do banco
+    const payload = items.map(i => ({
+      id: i.id,
+      patrimonio: i.patrimonio,
+      sala: i.sala,
+      descricao: i.desc,
+      tipo: i.tipo,
+      responsavel: i.resp,
+      observacoes: i.obs,
+      data: i.data,
+      hora: i.hora,
+      metodo: i.metodo
+    }));
+
+    const res = await fetch(`${url}/rest/v1/inventario`, {
+      method: 'POST',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'Prefer': 'resolution=merge-duplicates' // Upsert baseado em colunas únicas (patrimonio)
+      },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error('Falha ao salvar dados no banco');
+    setSyncStatus('ok', `✓ Sincronizado com o banco — ${fmtTime(now())}`);
+  } catch(e) {
+    setSyncStatus('error', 'Erro ao salvar: ' + e.message);
+  }
+}
+
+async function testSupabase() {
+  const url = document.getElementById('cfg-sb-url').value.trim();
+  const key = document.getElementById('cfg-sb-key').value.trim();
+  if (!url || !key) {
+    document.getElementById('settings-status').textContent = 'Preencha a URL e a Chave Anon primeiro.';
+    return;
+  }
+  setSyncStatus('loading', 'Testando conexão...');
+  document.getElementById('settings-status').textContent = 'Testando conexão...';
+  try {
+    const res = await fetch(`${url}/rest/v1/inventario?select=count`, {
+      method: 'GET',
+      headers: {
+        'apikey': key,
+        'Authorization': `Bearer ${key}`
       }
-      setSyncStatus('loading','Processando dados no servidor...');
-      const data = await fetchJSONP(url, { action: 'save_chunks', id: chunkId, assemble: 1 });
-      if(!data.ok) throw new Error(data.error||'Erro na montagem');
-      setSyncStatus('ok',`✓ ${data.saved} itens salvos — ${fmtTime(now())}`);
-    }
+    });
+    if (!res.ok) throw new Error('Credenciais incorretas ou tabela inexistente');
+    setSyncStatus('ok', '✓ Conexão OK! Banco configurado corretamente.');
   } catch(e) {
-    setSyncStatus('error','Erro ao salvar: '+e.message);
+    setSyncStatus('error', '✗ Falhou: ' + e.message);
   }
 }
 
-async function testSheets() {
-  const url=document.getElementById('cfg-url').value.trim();
-  if (!url) { document.getElementById('settings-status').textContent='Cole a URL primeiro.'; return; }
-  setSyncStatus('loading','Testando conexão...');
-  document.getElementById('settings-status').textContent='Testando...';
-  try {
-    const data = await fetchJSONP(url, { action: 'load' });
-    if(!data.ok) throw new Error(data.error||'Erro desconhecido');
-    setSyncStatus('ok',`✓ Conexão OK! ${(data.items||[]).length} itens na planilha.`);
-  } catch(e) {
-    setSyncStatus('error','✗ Falhou: '+e.message+' — verifique a URL e a implantação.');
-  }
+function doLoadFromSupabase() {
+  const url = document.getElementById('cfg-sb-url').value.trim();
+  const key = document.getElementById('cfg-sb-key').value.trim();
+  if (url) localStorage.setItem('senai_sb_url', url);
+  if (key) localStorage.setItem('senai_sb_key', key);
+  loadFromSupabase().then(ok => { if(ok) showToast('Dados carregados do Supabase!'); });
 }
 
-function doLoadFromSheets() {
-  const url=document.getElementById('cfg-url').value.trim();
-  if(url) localStorage.setItem('senai_sheets_url',url);
-  loadFromSheets().then(ok=>{ if(ok) showToast('Dados carregados do Google Sheets!'); });
-}
-function doSaveToSheets() {
-  const url=document.getElementById('cfg-url').value.trim();
-  if(url) localStorage.setItem('senai_sheets_url',url);
-  saveToSheets().then(()=>showToast('Dados salvos no Google Sheets!'));
+function doSaveToSupabase() {
+  const url = document.getElementById('cfg-sb-url').value.trim();
+  const key = document.getElementById('cfg-sb-key').value.trim();
+  if (url) localStorage.setItem('senai_sb_url', url);
+  if (key) localStorage.setItem('senai_sb_key', key);
+  saveToSupabase().then(() => showToast('Dados salvos no Supabase!'));
 }
 
 // ── Configurações ─────────────────────────────────────────────────
 function openSettings() {
-  document.getElementById('cfg-url').value = getScriptUrl();
-  document.getElementById('cfg-autosync').checked = localStorage.getItem('senai_autosync')!=='false';
-  document.getElementById('settings-status').textContent='';
-  document.getElementById('copy-ok').style.display='none';
+  const { url, key } = getSupabaseConfig();
+  document.getElementById('cfg-sb-url').value = url;
+  document.getElementById('cfg-sb-key').value = key;
+  document.getElementById('cfg-autosync').checked = localStorage.getItem('senai_autosync') !== 'false';
+  document.getElementById('settings-status').textContent = '';
+  document.getElementById('copy-ok').style.display = 'none';
   document.getElementById('settings-modal').classList.add('show');
 }
+
 function closeSettings() { document.getElementById('settings-modal').classList.remove('show'); }
+
 function saveSettings() {
-  const url=document.getElementById('cfg-url').value.trim();
-  localStorage.setItem('senai_sheets_url', url);
-  localStorage.setItem('senai_autosync', document.getElementById('cfg-autosync').checked?'true':'false');
-  setSyncStatus(url?'idle':'nourl');
+  const url = document.getElementById('cfg-sb-url').value.trim();
+  const key = document.getElementById('cfg-sb-key').value.trim();
+  localStorage.setItem('senai_sb_url', url);
+  localStorage.setItem('senai_sb_key', key);
+  localStorage.setItem('senai_autosync', document.getElementById('cfg-autosync').checked ? 'true' : 'false');
+  setSyncStatus(url && key ? 'idle' : 'nourl');
   closeSettings();
   showToast('Configurações salvas!');
 }
-function copyScript() {
-  navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(()=>{
-    document.getElementById('copy-ok').style.display='';
-    setTimeout(()=>document.getElementById('copy-ok').style.display='none',4000);
-  }).catch(()=>{ prompt('Copie o código abaixo:', APPS_SCRIPT_CODE); });
+
+function copySQLScript() {
+  navigator.clipboard.writeText(SUPABASE_SQL_CODE).then(() => {
+    document.getElementById('copy-ok').style.display = '';
+    setTimeout(() => document.getElementById('copy-ok').style.display = 'none', 4000);
+  }).catch(() => { prompt('Copie o código SQL abaixo:', SUPABASE_SQL_CODE); });
 }
+
 function clearAllData() {
   if (!confirm('Apagar TODOS os dados do inventário?\n\nEsta ação não pode ser desfeita.')) return;
-  items=[]; DB.save([]); updStats(); updDatalist();
+  items = []; DB.save([]); updStats(); updDatalist();
   closeSettings(); go('lista');
   showToast('Todos os dados apagados.', false);
 }
@@ -1613,10 +1574,9 @@ function clearAllData() {
 // ── Inicialização ─────────────────────────────────────────────────
 window.addEventListener('load', () => {
   updStats(); updDatalist();
-  const url=getScriptUrl();
-  setSyncStatus(url?'idle':'nourl');
-  // Carrega do Sheets se configurado
-  if (url) loadFromSheets();
+  const { url, key } = getSupabaseConfig();
+  setSyncStatus(url && key ? 'idle' : 'nourl');
+  if (url && key) loadFromSupabase();
 });
 </script>
 </body>
