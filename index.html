@@ -587,6 +587,9 @@ const DB = {
   save(d) { localStorage.setItem('senai_inv', JSON.stringify(d)); }
 };
 
+// ── Configurações Globais Hardcoded ───────────────────────────────
+const DEFAULT_SHEETS_URL = ''; // Cole a URL do seu Google Web App (Apps Script) aqui!
+
 // ── Estado Global ─────────────────────────────────────────────────
 let items      = DB.load();
 let curPat     = null;      // patrimônio do scan atual
@@ -1458,7 +1461,7 @@ function confirmImport() {
 // ═══════════════════════════════════════════════════════════════════
 //  GOOGLE SHEETS — Armazenamento permanente
 // ═══════════════════════════════════════════════════════════════════
-function getScriptUrl() { return localStorage.getItem('senai_sheets_url')||''; }
+function getScriptUrl() { return localStorage.getItem('senai_sheets_url') || DEFAULT_SHEETS_URL || ''; }
 
 function setSyncStatus(status, msg='') {
   const btn=document.getElementById('sync-btn'), icon=document.getElementById('sync-icon');
