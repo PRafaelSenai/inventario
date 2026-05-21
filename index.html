@@ -84,7 +84,7 @@
     .field label { display: block; font-size: 11px; font-weight: 600; color: var(--blue); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .4px; }
     .field input, .field select, .field textarea { width: 100%; padding: 9px 12px; border: 0.5px solid #ccc; border-radius: 8px; font-size: 14px; background: #fff; color: #333; font-family: var(--font); transition: border-color .15s; }
     .field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--blue); }
-    .field input.prefilled { border-color: var(--green); background: #f8fff5; }
+    .field input.prefilled, .field select.prefilled, .field textarea.prefilled { border-color: var(--green); background: #f8fff5; }
     .field textarea { resize: vertical; min-height: 56px; }
 
     /* ── Alerts ── */
@@ -202,9 +202,9 @@
   <!-- ══ PANE: SCAN ══ -->
   <div id="pane-scan" class="pane active">
     <div class="scan-area">
-      <video id="video-el" autoplay playsinline muted></video>
+      <video id="video-el" autoplay playsinline muted style="display:none"></video>
       <canvas id="scan-canvas" style="display:none"></canvas>
-      <div class="scan-live-line" id="scan-live-line"></div>
+      <div class="scan-live-line" id="scan-live-line" style="display:none"></div>
       <div class="qr-frame" id="qr-frame"><div class="scan-line"></div></div>
     </div>
 
@@ -228,6 +228,19 @@
     <button class="btn btn-ghost" onclick="simScan()">
       <i class="ti ti-bug"></i> Simular leitura (teste)
     </button>
+
+    <!-- Digitação Manual Rápida no Scan -->
+    <div style="background: #fdfdfd; border: 0.5px solid #e0e0e0; border-radius: 8px; padding: 12px; margin: 12px 0;">
+      <div style="font-size: 11px; color: var(--blue); font-weight: bold; text-transform: uppercase; margin-bottom: 6px; letter-spacing: .4px;">
+        <i class="ti ti-keyboard"></i> Digitação Manual Rápida
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="quick-pat-input" placeholder="Digite o número do patrimônio" inputmode="numeric" style="flex: 1; padding: 9px 12px; border: 0.5px solid #ccc; border-radius: 8px; font-size: 14px;" onkeydown="if(event.key === 'Enter') runQuickSearch()">
+        <button class="btn btn-blue btn-sm" onclick="runQuickSearch()" style="margin: 0; padding: 0 16px; font-weight: 600; border-radius: 8px;">
+          Buscar
+        </button>
+      </div>
+    </div>
 
     <!-- Formulário pós-scan -->
     <div class="form-block" id="scan-form">
@@ -270,7 +283,7 @@
   <!-- ══ PANE: MANUAL ══ -->
   <div id="pane-manual" class="pane">
     <div class="alert alert-warn"><i class="ti ti-alert-triangle"></i> Use quando o QR code não puder ser lido.</div>
-    <div class="field"><label>Nº de Patrimônio *</label><input id="m-pat" type="text" placeholder="Ex: 1332936" inputmode="numeric"></div>
+    <div class="field"><label>Nº de Patrimônio *</label><input id="m-pat" type="text" placeholder="Ex: 1332936" inputmode="numeric" oninput="checkManualPat()"></div>
     <div class="field">
       <label>Sala / Localização *</label>
       <input id="m-sala" type="text" placeholder="Ex: Sala 101, Lab Informática..." list="dl-salas-m" autocomplete="off">
@@ -893,6 +906,15 @@ function simScan() {
   processQR(raw);
 }
 
+function runQuickSearch() {
+  const input = document.getElementById('quick-pat-input');
+  const val = input.value.trim();
+  if (!val) return;
+  input.value = '';
+  if (camStream) stopCam();
+  processQR(val);
+}
+
 // ── Processar QR com parser inteligente ───────────────────────────
 function processQR(raw) {
   const parsed = parseQRData(raw.trim());
@@ -906,40 +928,53 @@ function processQR(raw) {
 
   const pat = parsed.patrimonio;
   const dup = items.find(i => i.patrimonio === pat);
+  let finalData = parsed;
+  let isUpdate = false;
   if (dup) {
-    document.getElementById('result-box').innerHTML =
-      `<span style="color:#a32d2d">⚠ Patrimônio ${pat} já registrado — Sala: ${escHtml(dup.sala)}</span>`;
-    setScanStatus('Já cadastrado', 'error');
-    return;
+    isUpdate = true;
+    finalData = {
+      patrimonio: dup.patrimonio,
+      sala: dup.sala,
+      desc: dup.desc,
+      tipo: dup.tipo,
+      resp: dup.resp,
+      obs: dup.obs
+    };
   }
 
   curPat    = pat;
-  curParsed = parsed;
+  curParsed = finalData;
 
-  // ── Pré-preenche formulário com dados do QR ──
+  // ── Pré-preenche formulário com dados do QR ou do cadastro ──
   const setField = (id, val) => {
     const el = document.getElementById(id);
     if (el && val) { el.value = val; el.classList.add('prefilled'); }
     else if (el)   { el.classList.remove('prefilled'); }
   };
-  setField('s-sala', parsed.sala);
-  setField('s-desc', parsed.desc);
-  setField('s-resp', parsed.resp);
-  setField('s-obs',  parsed.obs);
+  setField('s-sala', finalData.sala);
+  setField('s-desc', finalData.desc);
+  setField('s-resp', finalData.resp);
+  setField('s-obs',  finalData.obs);
 
-  if (parsed.tipo) {
-    const tipoVal = matchTipo(parsed.tipo) || parsed.tipo;
+  if (finalData.tipo) {
+    const tipoVal = matchTipo(finalData.tipo) || finalData.tipo;
     const sel = document.getElementById('s-tipo');
+    sel.value = '';
     // Tenta corresponder ao option existente
     [...sel.options].forEach(o => { if (o.value === tipoVal) sel.value = tipoVal; });
+    if (sel.value) sel.classList.add('prefilled');
+    else sel.classList.remove('prefilled');
+  } else {
+    document.getElementById('s-tipo').value = '';
+    document.getElementById('s-tipo').classList.remove('prefilled');
   }
 
   // ── Badge mostrando o que foi encontrado no QR ──
   const found = [];
-  if (parsed.desc)  found.push({ icon: 'ti-device-desktop', text: parsed.desc });
-  if (parsed.tipo)  found.push({ icon: 'ti-tag',            text: parsed.tipo });
-  if (parsed.sala)  found.push({ icon: 'ti-door',           text: parsed.sala });
-  if (parsed.obs)   found.push({ icon: 'ti-notes',          text: parsed.obs.slice(0,50) });
+  if (finalData.desc)  found.push({ icon: 'ti-device-desktop', text: finalData.desc });
+  if (finalData.tipo)  found.push({ icon: 'ti-tag',            text: finalData.tipo });
+  if (finalData.sala)  found.push({ icon: 'ti-door',           text: finalData.sala });
+  if (finalData.obs)   found.push({ icon: 'ti-notes',          text: finalData.obs.slice(0,50) });
 
   const badge = document.getElementById('qr-parsed-badge');
   const bItems = document.getElementById('qr-parsed-items');
@@ -953,13 +988,23 @@ function processQR(raw) {
   }
 
   // ── Status e formulário ──
-  document.getElementById('result-box').innerHTML =
-    `<span style="color:#2a6000">✓ Patrimônio: <strong>${pat}</strong>${found.length > 0 ? ' — ' + found.length + ' campo(s) pré-preenchido(s)' : ''}</span>`;
-
-  showAlert('scan-info',
-    `<i class="ti ti-barcode"></i> Patrimônio: <strong>${pat}</strong>${parsed.sala ? ' | Sala: ' + escHtml(parsed.sala) : ''} — Confirme os dados abaixo.`,
-    'ok'
-  );
+  if (isUpdate) {
+    document.getElementById('result-box').innerHTML =
+      `<span style="color:var(--blue)">✓ Patrimônio: <strong>${pat}</strong> (Localizado no cadastro)</span>`;
+    setScanStatus('Patrimônio localizado', 'found');
+    showAlert('scan-info',
+      `<i class="ti ti-edit"></i> Patrimônio: <strong>${pat}</strong> já cadastrado — Confirme ou atualize os dados.`,
+      'ok'
+    );
+  } else {
+    document.getElementById('result-box').innerHTML =
+      `<span style="color:#2a6000">✓ Patrimônio: <strong>${pat}</strong>${found.length > 0 ? ' — ' + found.length + ' campo(s) pré-preenchido(s)' : ''}</span>`;
+    setScanStatus('QR detectado!', 'found');
+    showAlert('scan-info',
+      `<i class="ti ti-barcode"></i> Patrimônio: <strong>${pat}</strong>${finalData.sala ? ' | Sala: ' + escHtml(finalData.sala) : ''} — Confirme os dados abaixo.`,
+      'ok'
+    );
+  }
   document.getElementById('scan-form').classList.add('show');
 
   // Foca o primeiro campo vazio obrigatório
@@ -992,10 +1037,69 @@ function saveScan() {
   if (!sala || !desc || !resp) { alert('Preencha: Sala, Descrição e Responsável.'); return; }
   const savedPat = curPat;
   const d = now();
-  items.push({ id: genId(), patrimonio: savedPat, sala, desc, tipo, resp, obs, data: fmtDate(d), hora: fmtTime(d), metodo: 'QR Code' });
+  
+  const idx = items.findIndex(i => i.patrimonio === savedPat);
+  if (idx >= 0) {
+    items[idx] = { ...items[idx], sala, desc, tipo, resp, obs, data: fmtDate(d), hora: fmtTime(d), metodo: 'QR Code' };
+    showToast('Patrimônio ' + savedPat + ' atualizado!');
+  } else {
+    items.push({ id: genId(), patrimonio: savedPat, sala, desc, tipo, resp, obs, data: fmtDate(d), hora: fmtTime(d), metodo: 'QR Code' });
+  }
+  
   persist();
   cancelScan();
   flashPane('pane-scan', 'Patrimônio ' + savedPat + ' salvo!');
+}
+
+function checkManualPat() {
+  const pat = document.getElementById('m-pat').value.trim();
+  if (pat.length < 4) {
+    ['m-desc','m-tipo','m-obs','m-sala'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el && el.classList.contains('prefilled')) {
+        el.value = '';
+        el.classList.remove('prefilled');
+      }
+    });
+    const msgEl = document.getElementById('m-msg');
+    if (msgEl && msgEl.textContent.includes('localizado')) msgEl.innerHTML = '';
+    return;
+  }
+  
+  const found = items.find(i => i.patrimonio === pat);
+  if (found) {
+    const setField = (id, val) => {
+      const el = document.getElementById(id);
+      if (el) {
+        el.value = val || '';
+        el.classList.add('prefilled');
+      }
+    };
+    setField('m-desc', found.desc);
+    setField('m-obs', found.obs);
+    setField('m-sala', found.sala);
+    
+    if (found.tipo) {
+      const tipoVal = matchTipo(found.tipo) || found.tipo;
+      const sel = document.getElementById('m-tipo');
+      sel.value = '';
+      [...sel.options].forEach(o => { if (o.value === tipoVal) sel.value = tipoVal; });
+      if (sel.value) sel.classList.add('prefilled');
+      else sel.classList.remove('prefilled');
+    } else {
+      document.getElementById('m-tipo').value = '';
+      document.getElementById('m-tipo').classList.remove('prefilled');
+    }
+    
+    showAlert('m-msg', '<i class="ti ti-check"></i> Patrimônio localizado no cadastro! Dados pré-preenchidos.', 'ok');
+  } else {
+    ['m-desc','m-tipo','m-obs','m-sala'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('prefilled');
+    });
+    const msgEl = document.getElementById('m-msg');
+    if (msgEl && msgEl.textContent.includes('localizado')) msgEl.innerHTML = '';
+  }
 }
 
 // ── Salvar via Manual ─────────────────────────────────────────────
@@ -1007,13 +1111,33 @@ function saveManual() {
   const tipo = document.getElementById('m-tipo').value;
   const obs  = document.getElementById('m-obs').value.trim();
   if (!pat||!sala||!desc||!resp) { showAlert('m-msg','<i class="ti ti-alert-triangle"></i> Preencha os campos obrigatórios (*)','err'); return; }
-  if (items.find(i=>i.patrimonio===pat)) { showAlert('m-msg','<i class="ti ti-alert-triangle"></i> Patrimônio '+pat+' já cadastrado!','err'); return; }
+  
   const d = now();
-  items.push({ id: genId(), patrimonio: pat, sala, desc, tipo, resp, obs, data: fmtDate(d), hora: fmtTime(d), metodo: 'Manual' });
+  const idx = items.findIndex(i => i.patrimonio === pat);
+  if (idx >= 0) {
+    items[idx] = { ...items[idx], sala, desc, tipo, resp, obs, data: fmtDate(d), hora: fmtTime(d), metodo: 'Manual' };
+    showAlert('m-msg', '<i class="ti ti-check"></i> Patrimônio ' + pat + ' atualizado!', 'ok');
+  } else {
+    items.push({ id: genId(), patrimonio: pat, sala, desc, tipo, resp, obs, data: fmtDate(d), hora: fmtTime(d), metodo: 'Manual' });
+    showAlert('m-msg', '<i class="ti ti-check"></i> Patrimônio ' + pat + ' adicionado!', 'ok');
+  }
+  
   persist();
-  ['m-pat','m-sala','m-desc','m-resp','m-obs'].forEach(id => document.getElementById(id).value='');
-  document.getElementById('m-tipo').value='';
-  showAlert('m-msg','<i class="ti ti-check"></i> Patrimônio '+pat+' adicionado!','ok');
+  
+  // Limpa campos e remove classe .prefilled
+  ['m-pat','m-sala','m-desc','m-resp','m-obs'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.value = '';
+      el.classList.remove('prefilled');
+    }
+  });
+  const tipoEl = document.getElementById('m-tipo');
+  if (tipoEl) {
+    tipoEl.value = '';
+    tipoEl.classList.remove('prefilled');
+  }
+  
   setTimeout(()=>{ const el=document.getElementById('m-msg'); if(el) el.innerHTML=''; },3000);
 }
 
