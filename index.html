@@ -1461,7 +1461,7 @@ function confirmImport() {
 // ═══════════════════════════════════════════════════════════════════
 //  GOOGLE SHEETS — Armazenamento permanente
 // ═══════════════════════════════════════════════════════════════════
-function getScriptUrl() { return localStorage.getItem('senai_sheets_url') || DEFAULT_SHEETS_URL || ''; }
+function getScriptUrl() { const u = localStorage.getItem('senai_sheets_url'); return (u && u.trim().startsWith('http')) ? u.trim() : DEFAULT_SHEETS_URL; }
 
 function setSyncStatus(status, msg='') {
   const btn=document.getElementById('sync-btn'), icon=document.getElementById('sync-icon');
